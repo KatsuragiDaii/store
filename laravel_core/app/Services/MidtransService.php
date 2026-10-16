@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Midtrans\Config;
 use Midtrans\Snap;
+use App\Enums\OrderStatus;
 use App\Models\Order;
 
 class MidtransService
@@ -75,5 +76,48 @@ class MidtransService
             report($e);
             return null;
         }
+    }
+
+    /**
+     * Cek apakah notifikasi benar-benar dari Midtrans.
+     *
+     * Rumus resmi Midtrans: SHA512(order_id + status_code + gross_amount + ServerKey).
+     * Nilai gross_amount WAJIB dipakai persis seperti yang dikirim (mis. "150000.00"),
+     * jangan diubah jadi angka dulu, kalau tidak hasil hash-nya beda.
+     */
+    public function isValidSignature(array $payload): bool
+    {
+        $orderId     = (string) ($payload['order_id'] ?? '');
+        $statusCode  = (string) ($payload['status_code'] ?? '');
+        $grossAmount = (string) ($payload['gross_amount'] ?? '');
+        $signature   = (string) ($payload['signature_key'] ?? '');
+        $serverKey   = (string) config('midtrans.server_key');
+
+        if ($orderId === '' || $statusCode === '' || $grossAmount === '' || $signature === '' || $serverKey === '') {
+            return false;
+        }
+
+        $expected = hash('sha512', $orderId.$statusCode.$grossAmount.$serverKey);
+
+        return hash_equals($expected, $signature);
+    }
+
+    /**
+     * Petakan transaction_status Midtrans ke OrderStatus kita.
+     * Mengembalikan null untuk status yang sengaja tidak mengubah apa pun
+     * (mis. kartu kredit yang masih "challenge" fraud, atau chargeback).
+     */
+    public function mapStatus(string $transactionStatus, ?string $fraudStatus = null): ?OrderStatus
+    {
+        return match ($transactionStatus) {
+            // Kartu kredit: hanya sukses kalau lolos pengecekan fraud.
+            'capture'            => $fraudStatus === 'accept' ? OrderStatus::Paid : null,
+            'settlement'         => OrderStatus::Paid,
+            'pending'            => OrderStatus::Pending,
+            'deny', 'cancel'     => OrderStatus::Cancelled,
+            'expire'             => OrderStatus::Expired,
+            'refund', 'partial_refund' => OrderStatus::Refunded,
+            default              => null,
+        };
     }
 }

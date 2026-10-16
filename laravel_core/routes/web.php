@@ -13,6 +13,7 @@ use App\Http\Controllers\AccountController;
 use App\Http\Controllers\WishlistController;
 use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\PageController;
+use App\Http\Controllers\ShippingController;
 use App\Http\Middleware\EnsureEmailVerified;
 
 // ROUTE HALAMAN UTAMA (KATALOG)
@@ -85,7 +86,14 @@ Route::middleware(['auth', EnsureEmailVerified::class])->group(function () {
     Route::post('/checkout', [OrderController::class, 'store'])->name('checkout.store');
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
-    
+    // Riwayat perjalanan paket (resi) milik pesanan sendiri
+    Route::get('/orders/{order}/tracking', [OrderController::class, 'tracking'])->middleware('throttle:20,1')->name('orders.tracking');
+
+    // Ongkir otomatis: cari lokasi tujuan & hitung ongkir (JSON, dipakai halaman checkout).
+    // Dibatasi supaya kuota API ongkir toko tidak habis oleh satu pengguna.
+    Route::get('/shipping/destinations', [ShippingController::class, 'destinations'])->middleware('throttle:40,1')->name('shipping.destinations');
+    Route::post('/shipping/cost', [ShippingController::class, 'cost'])->middleware('throttle:30,1')->name('shipping.cost');
+
     // Dasbor Akun & Pengaturan Profil
     Route::get('/akun', [AccountController::class, 'index'])->name('account.dashboard');
     Route::post('/akun/profil', [AccountController::class, 'updateProfile'])->name('account.updateProfile');

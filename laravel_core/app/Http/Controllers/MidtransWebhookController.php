@@ -57,6 +57,21 @@ class MidtransWebhookController extends Controller
         // Supaya pengurangan stok konsisten dengan jalur manual admin,
         // satu method, satu logika, tidak ada risiko dobel kurangi stok.
         if ($newStatus === OrderStatus::Paid) {
+            // Pastikan nominal yang dibayar sama dengan total pesanan. Signature
+            // sudah menjamin payload asli dari Midtrans; pengecekan ini menjaga
+            // dari pesanan yang tertandai lunas padahal nominalnya tidak cocok.
+            $paidAmount = (int) round((float) ($payload['gross_amount'] ?? 0));
+
+            if ($paidAmount !== (int) $order->total) {
+                Log::error('Midtrans webhook: nominal tidak cocok dengan total pesanan', [
+                    'order_id' => $order->order_number,
+                    'gross_amount' => $payload['gross_amount'] ?? null,
+                    'order_total' => $order->total,
+                ]);
+                // Balas 200 supaya Midtrans tidak retry terus; kasus ini perlu dicek manual.
+                return response()->json(['message' => 'Nominal tidak cocok, tidak diproses']);
+            }
+
             $order->markAsPaid($payload['payment_type'] ?? null);
             return response()->json(['message' => 'OK']);
         }
@@ -67,22 +82,37 @@ class MidtransWebhookController extends Controller
             // notifikasi yang sama dua kali hampir bersamaan (retry), cuma
             // satu yang benar-benar memproses perubahan status.
             $locked = Order::whereKey($order->id)->lockForUpdate()->first();
+            $previous = $locked->status;
 
-            if ($locked->status === $newStatus) {
+            if ($previous === $newStatus) {
                 return; // Sudah diproses sebelumnya.
             }
 
             // Jangan biarkan status mundur ke "pending" kalau order sudah
             // pernah lebih maju dari itu (mis. notifikasi datang tidak urut).
-            if ($newStatus === OrderStatus::Pending && $locked->status !== OrderStatus::Pending) {
+            if ($newStatus === OrderStatus::Pending && $previous !== OrderStatus::Pending) {
+                return;
+            }
+
+            // Pesanan yang sudah dikirim atau selesai tidak boleh dibatalkan /
+            // dikedaluwarsakan oleh notifikasi pembayaran yang telat datang.
+            if (in_array($previous, [OrderStatus::Shipped, OrderStatus::Completed])) {
                 return;
             }
 
             // Update status pesanan
             $locked->update(['status' => $newStatus]);
 
-            // TAMBAHAN: Jika pesanan batal atau expired, kembalikan stok produk
-            if (in_array($newStatus, [OrderStatus::Cancelled, OrderStatus::Expired])) {
+            // Jika pesanan batal atau expired, kembalikan stok produk, TAPI hanya
+            // kalau stoknya memang pernah dikurangi. Stok baru dikurangi saat
+            // pesanan dibayar (Order::markAsPaid, yang mengisi paid_at), jadi
+            // pesanan yang kedaluwarsa sebelum dibayar tidak boleh menambah stok.
+            // Status sebelumnya Cancelled/Expired berarti stok sudah dikembalikan.
+            if (
+                in_array($newStatus, [OrderStatus::Cancelled, OrderStatus::Expired])
+                && $locked->paid_at !== null
+                && ! in_array($previous, [OrderStatus::Cancelled, OrderStatus::Expired])
+            ) {
                 $locked->incrementStock();
             }
         });

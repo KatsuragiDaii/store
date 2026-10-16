@@ -61,6 +61,17 @@ class Product extends Model
     }
 
     /**
+     * Berat satu unit produk dalam gram (untuk hitung ongkir).
+     * Kalau kolomnya kosong/0, pakai berat bawaan dari config/shipping.php.
+     */
+    public function shippingWeight(): int
+    {
+        $weight = (int) $this->weight;
+
+        return $weight > 0 ? $weight : (int) config('shipping.default_weight');
+    }
+
+    /**
      * Cek apakah produk ini menggunakan sistem pelacakan stok
      */
     public function tracksStock()

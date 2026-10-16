@@ -68,8 +68,13 @@ class Order extends Model
         DB::transaction(function () use ($paymentMethod) {
             $locked = static::whereKey($this->id)->lockForUpdate()->first();
 
-            if ($locked->status === OrderStatus::Paid) {
-                return; // Sudah pernah diproses, jangan kurangi stok dua kali.
+            // Sudah pernah diproses: statusnya Paid, atau sudah lanjut ke tahap
+            // berikutnya (Diproses/Dikirim/Selesai) dan paid_at sudah terisi.
+            // Jangan kurangi stok dua kali, dan jangan memundurkan status
+            // pesanan yang sudah dikirim kalau notifikasi "settlement" Midtrans
+            // datang lagi (retry / tidak berurutan).
+            if ($locked->status === OrderStatus::Paid || $locked->paid_at !== null) {
+                return;
             }
 
             $locked->update([

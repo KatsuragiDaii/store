@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\OrderStatus;
 use App\Models\Order;
+use App\Services\ShippingService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -61,12 +62,25 @@ class AdminOrderController extends Controller
         // Info kurir biasanya diisi bersamaan dengan menandai "shipped", tapi
         // dibiarkan bisa diisi terpisah kapan saja (mis. resi menyusul).
         if ($request->filled('courier') || $request->filled('tracking_number')) {
+            // "J&T" / "JNE" yang diketik admin disimpan sebagai kode API ("jnt", "jne")
+            // supaya pembeli bisa melacak paketnya. Teks bebas (mis. "Diantar Sendiri")
+            // disimpan apa adanya.
+            $courierCode = ShippingService::normalizeCourier($request->courier);
+            $courier = array_key_exists($courierCode, config('shipping.courier_names'))
+                ? $courierCode
+                : $request->courier;
+
             $order->update([
-                'courier' => $request->courier,
+                'courier' => $courier,
                 'courier_service' => $request->courier_service,
-                'tracking_number' => $request->tracking_number,
-                'shipped_at' => $newStatus === OrderStatus::Shipped ? ($order->shipped_at ?? now()) : $order->shipped_at,
+                'tracking_number' => $request->tracking_number ? trim($request->tracking_number) : null,
             ]);
+        }
+
+        // Waktu kirim dicatat setiap kali status "Dikirim", walau kurir/resi
+        // belum diisi (sebelumnya hanya tercatat kalau kurir/resi ikut diisi).
+        if ($newStatus === OrderStatus::Shipped && $order->shipped_at === null) {
+            $order->update(['shipped_at' => now()]);
         }
 
         if ($newStatus === OrderStatus::Completed) {

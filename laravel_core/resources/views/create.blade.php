@@ -38,6 +38,11 @@
                         <input type="number" name="discount_price" placeholder="Contoh: 250000" class="mt-2 block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-black focus:border-black text-xs">
                     <p class="text-[10px] text-gray-400 mt-1 font-bold uppercase">*Kosongkan jika produk tidak sedang promo/sale.</p>
                     </div>
+                    <div>
+                        <label class="block text-[10px] font-bold tracking-widest text-gray-700 uppercase">Berat per Item (gram)</label>
+                        <input name="weight" type="number" min="1" max="50000" value="{{ old('weight', config('shipping.default_weight')) }}" placeholder="300" class="mt-2 appearance-none block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-black focus:border-black sm:text-sm transition">
+                        <p class="text-[10px] text-gray-400 mt-1 font-bold uppercase">*Dipakai menghitung ongkir. Kaos rata-rata 200-350 gram.</p>
+                    </div>
                 </div>
 
                 <!-- Kategori Gender -->

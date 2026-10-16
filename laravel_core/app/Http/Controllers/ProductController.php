@@ -22,6 +22,7 @@ class ProductController extends Controller
             'type'      => 'nullable|string',
             'gender'    => 'required|string', // 👈 Validasi gender
             'material'  => 'nullable|string',
+            'weight'    => 'nullable|integer|min:1|max:50000', // gram, untuk hitung ongkir
             'sizes'     => 'nullable|array',
             'stock'     => 'nullable|array',
             'stock.*'   => 'nullable|integer|min:0',
@@ -58,6 +59,7 @@ class ProductController extends Controller
             'type'           => $request->type ?? 'T-Shirt',
             'gender'         => $request->gender,
             'material'       => $request->material,
+            'weight'         => $request->weight ?: config('shipping.default_weight'),
             'sizes'          => $request->sizes,
             'stock'          => $stockData,
             'images'         => $imageNames,
@@ -313,6 +315,7 @@ public function women(Request $request)
             'discount_price' => 'nullable|numeric',
             'type' => 'required|string',
             'material' => 'nullable|string',
+            'weight' => 'nullable|integer|min:1|max:50000', // gram, untuk hitung ongkir
             'images.*' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048'
             // Sesuaikan validasi sizes/stock jika ada di sistem Anda
         ]);
@@ -337,6 +340,8 @@ public function women(Request $request)
             'discount_price' => $validated['discount_price'],
             'type' => $validated['type'],
             'material' => $validated['material'],
+            // Kosong = pertahankan berat yang sudah ada.
+            'weight' => $validated['weight'] ?? $product->weight ?? config('shipping.default_weight'),
             'images' => $imagePaths,
         ]);
 

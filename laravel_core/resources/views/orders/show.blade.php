@@ -7,6 +7,24 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style> body { font-family: 'Inter', sans-serif; } .logo-font { font-family: 'Times New Roman', Times, serif; font-style: italic; } </style>
+    <style>
+        .trk-box { margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+        .trk-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; font-size: 10px; font-weight: 900; letter-spacing: .18em; text-transform: uppercase; color: #fff; background: #000; border: 0; border-radius: 8px; cursor: pointer; }
+        .trk-btn:hover { background: #1f2937; }
+        .trk-btn[disabled] { opacity: .6; cursor: not-allowed; }
+        .trk-msg { margin-top: 12px; font-size: 12px; font-weight: 600; color: #6b7280; }
+        .trk-msg:empty { display: none; }
+        .trk-error { color: #dc2626; }
+        .trk-head { margin-top: 14px; font-size: 12px; font-weight: 800; color: #000; text-transform: uppercase; letter-spacing: .06em; }
+        .trk-sub { margin-top: 2px; font-size: 11px; color: #6b7280; }
+        .trk-list { list-style: none; margin: 14px 0 0; padding: 0 0 0 18px; border-left: 2px solid #e5e7eb; }
+        .trk-item { position: relative; padding: 0 0 16px 14px; }
+        .trk-item:last-child { padding-bottom: 0; }
+        .trk-item::before { content: ''; position: absolute; left: -24px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #d1d5db; border: 2px solid #fff; box-sizing: content-box; }
+        .trk-item:first-child::before { background: #000; }
+        .trk-desc { font-size: 12px; font-weight: 700; color: #111; line-height: 1.4; }
+        .trk-meta { margin-top: 2px; font-size: 10px; font-weight: 700; color: #9ca3af; letter-spacing: .06em; text-transform: uppercase; }
+    </style>
 </head>
 <body class="text-gray-900 antialiased bg-white flex flex-col min-h-screen">
     
@@ -106,6 +124,29 @@
                         <div class="mt-4 pt-4 border-t border-gray-200">
                             <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Catatan Pesanan:</p>
                             <p class="text-xs text-gray-800 italic">{{ $order->notes }}</p>
+                        </div>
+                        @endif
+
+                        @if($order->courier || $order->shipping_etd || $order->tracking_number)
+                        <div class="trk-box">
+                            @if($order->courier)
+                            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Kurir</p>
+                            <p class="text-xs font-black text-black uppercase tracking-widest mb-3">{{ \App\Services\ShippingService::courierName($order->courier) }} {{ $order->courier_service }}</p>
+                            @endif
+                            @if($order->shipping_etd && ! $order->tracking_number)
+                            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Estimasi Tiba</p>
+                            <p class="text-xs font-black text-black mb-3">{{ $order->shipping_etd }}</p>
+                            @endif
+                            @if($order->tracking_number)
+                            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Nomor Resi</p>
+                            <p class="text-xs font-black text-black tracking-widest mb-3" style="word-break: break-all;">{{ $order->tracking_number }}</p>
+                            @if($canTrack)
+                            <button type="button" id="tombol-lacak" class="trk-btn" data-url="{{ route('orders.tracking', $order) }}">Lacak Paket</button>
+                            <div id="trk-result" aria-live="polite"></div>
+                            @else
+                            <p class="trk-msg" style="margin-top:0">Lacak paketmu dengan nomor resi di situs atau aplikasi kurir.</p>
+                            @endif
+                            @endif
                         </div>
                         @endif
                     </div>
@@ -214,6 +255,62 @@
                 }
             });
         </script>
+    @endif
+    @if($canTrack)
+    <script>
+    (function () {
+        var btn = document.getElementById('tombol-lacak');
+        var box = document.getElementById('trk-result');
+        if (!btn || !box) return;
+
+        function el(tag, cls, text) {
+            var n = document.createElement(tag);
+            if (cls) n.className = cls;
+            if (text !== undefined) n.textContent = text;
+            return n;
+        }
+
+        function show(msg, isError) {
+            box.textContent = '';
+            box.appendChild(el('p', 'trk-msg' + (isError ? ' trk-error' : ''), msg));
+        }
+
+        function render(d) {
+            box.textContent = '';
+            box.appendChild(el('p', 'trk-head', d.delivered ? 'Paket sudah diterima' : (d.status || 'Dalam perjalanan')));
+            var route = [d.origin, d.destination].filter(Boolean).join(' → ');
+            if (route) box.appendChild(el('p', 'trk-sub', route));
+
+            if (!d.history || !d.history.length) {
+                box.appendChild(el('p', 'trk-msg', 'Belum ada riwayat perjalanan.'));
+                return;
+            }
+            var ul = el('ul', 'trk-list');
+            d.history.forEach(function (h) {
+                var li = el('li', 'trk-item');
+                li.appendChild(el('p', 'trk-desc', h.description));
+                li.appendChild(el('p', 'trk-meta', [h.date, h.time, h.city].filter(Boolean).join(' · ')));
+                ul.appendChild(li);
+            });
+            box.appendChild(ul);
+        }
+
+        btn.addEventListener('click', function () {
+            btn.disabled = true;
+            show('Mengambil data pelacakan…', false);
+            fetch(btn.dataset.url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                .then(function (res) {
+                    return res.json().catch(function () { return {}; }).then(function (body) {
+                        if (!res.ok) throw new Error(body.message || 'Data pelacakan belum bisa diambil. Coba lagi nanti.');
+                        return body;
+                    });
+                })
+                .then(function (body) { render(body.data); })
+                .catch(function (err) { show(err.message, true); })
+                .then(function () { btn.disabled = false; });
+        });
+    })();
+    </script>
     @endif
 </body>
 </html>
